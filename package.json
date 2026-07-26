@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "vite build",
-    "start": "npx serve dist --single --listen 3000",
+    "start": "npx serve dist --single -l $PORT",
     "dev": "vite"
   },
   "dependencies": {
