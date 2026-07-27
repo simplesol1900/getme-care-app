@@ -31,8 +31,8 @@ const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY")!, {
 });
 
 const resend = new Resend(Deno.env.get("RESEND_API_KEY") ?? "");
-const FROM = "GetMeCare <noreply@getmecare.ca>";
-const SITE = "https://getmecare.ca";
+const FROM = "GetMeCare <noreply@getmecare-ontario.com>";
+const SITE = "https://getmecare-ontario.com";
 
 // ── Email helpers ─────────────────────────────────────────────────────────────
 
@@ -48,7 +48,7 @@ function emailLayout(body: string): string {
   </div>
   <div style="padding:28px 32px;">${body}</div>
   <div style="background:#F8FAFC;padding:16px 32px;border-top:1px solid rgba(0,0,0,0.06);">
-    <p style="color:#94a3b8;font-size:12px;margin:0;">GetMeCare &nbsp;&middot;&nbsp; Ontario&rsquo;s trusted independent PSW marketplace &nbsp;&middot;&nbsp; <a href="${SITE}" style="color:#0EA5A0;text-decoration:none;">getmecare.ca</a></p>
+    <p style="color:#94a3b8;font-size:12px;margin:0;">GetMeCare &nbsp;&middot;&nbsp; Ontario&rsquo;s trusted independent PSW marketplace &nbsp;&middot;&nbsp; <a href="${SITE}" style="color:#0EA5A0;text-decoration:none;">getmecare-ontario.com</a></p>
   </div>
 </div></body></html>`;
 }
@@ -97,13 +97,13 @@ async function notif(
 
 // ── Health ────────────────────────────────────────────────────────────────────
 
-app.get("/make-server-f62a5d52/health", (c) =>
+app.get("/health", (c) =>
   c.json({ status: "ok" }),
 );
 
 // ── DB Setup ──────────────────────────────────────────────────────────────────
 
-app.post("/make-server-f62a5d52/setup-db", async (c) => {
+app.post("/setup-db", async (c) => {
   const stmts = [
     `ALTER TABLE profiles ADD COLUMN IF NOT EXISTS phone TEXT`,
     `ALTER TABLE profiles ADD COLUMN IF NOT EXISTS display_name TEXT`,
@@ -203,7 +203,7 @@ app.post("/make-server-f62a5d52/setup-db", async (c) => {
 // ── M2: Matching Engine ───────────────────────────────────────────────────────
 
 app.get(
-  "/make-server-f62a5d52/match-caregivers/:postal",
+  "/match-caregivers/:postal",
   async (c) => {
     const postal = c.req
       .param("postal")
@@ -225,7 +225,7 @@ app.get(
   },
 );
 
-app.get("/make-server-f62a5d52/caregivers", async (c) => {
+app.get("/caregivers", async (c) => {
   const city = c.req.query("city");
   const service = c.req.query("service");
   const lang = c.req.query("lang");
@@ -258,7 +258,7 @@ app.get("/make-server-f62a5d52/caregivers", async (c) => {
 });
 
 app.get(
-  "/make-server-f62a5d52/match-jobs/:caregiver_id",
+  "/match-jobs/:caregiver_id",
   async (c) => {
     const caregiverId = c.req.param("caregiver_id");
     const { data: profile } = await supabase
@@ -283,7 +283,7 @@ app.get(
 
 // ── M3: Bid Management ────────────────────────────────────────────────────────
 
-app.post("/make-server-f62a5d52/accept-bid", async (c) => {
+app.post("/accept-bid", async (c) => {
   const { bid_id, job_id } = await c.req.json();
   await supabase
     .from("bids")
@@ -339,7 +339,7 @@ app.post("/make-server-f62a5d52/accept-bid", async (c) => {
   return c.json({ success: true });
 });
 
-app.post("/make-server-f62a5d52/counter-bid", async (c) => {
+app.post("/counter-bid", async (c) => {
   const { bid_id, counter_amount } = await c.req.json();
   await supabase
     .from("bids")
@@ -350,7 +350,7 @@ app.post("/make-server-f62a5d52/counter-bid", async (c) => {
 
 // ── Clock-In / Clock-Out email notifications ──────────────────────────────────
 
-app.post("/make-server-f62a5d52/notify-clock-in", async (c) => {
+app.post("/notify-clock-in", async (c) => {
   const { caregiver_id, family_id, rate } = await c.req.json();
   const [{ data: cg }, { data: fam }] = await Promise.all([
     supabase
@@ -400,7 +400,7 @@ app.post("/make-server-f62a5d52/notify-clock-in", async (c) => {
 });
 
 app.post(
-  "/make-server-f62a5d52/notify-clock-out",
+  "/notify-clock-out",
   async (c) => {
     const {
       caregiver_id,
@@ -465,7 +465,7 @@ app.post(
 
 // ── M3: Approve Shift → Stripe 15% Charge ────────────────────────────────────
 
-app.post("/make-server-f62a5d52/approve-shift", async (c) => {
+app.post("/approve-shift", async (c) => {
   const { shift_id, family_id } = await c.req.json();
   const { data: shift, error: shiftErr } = await supabase
     .from("shifts")
@@ -616,7 +616,7 @@ app.post("/make-server-f62a5d52/approve-shift", async (c) => {
   }
 });
 
-app.post("/make-server-f62a5d52/dispute-shift", async (c) => {
+app.post("/dispute-shift", async (c) => {
   const { shift_id } = await c.req.json();
   await supabase
     .from("shifts")
@@ -627,7 +627,7 @@ app.post("/make-server-f62a5d52/dispute-shift", async (c) => {
 
 // ── Stripe: Link card ─────────────────────────────────────────────────────────
 
-app.post("/make-server-f62a5d52/link-card", async (c) => {
+app.post("/link-card", async (c) => {
   const { caregiver_id, payment_method_id, email, name } =
     await c.req.json();
   try {
@@ -669,7 +669,7 @@ app.post("/make-server-f62a5d52/link-card", async (c) => {
 // ── Admin: verify / suspend / reinstate caregiver ────────────────────────────
 
 app.post(
-  "/make-server-f62a5d52/verify-caregiver",
+  "/verify-caregiver",
   async (c) => {
     const { caregiver_id } = await c.req.json();
     await supabase
@@ -704,7 +704,7 @@ app.post(
 );
 
 app.post(
-  "/make-server-f62a5d52/reinstate-caregiver",
+  "/reinstate-caregiver",
   async (c) => {
     const { caregiver_id } = await c.req.json();
     await supabase
@@ -740,7 +740,7 @@ app.post(
 // ── M4: Live Booking Simulation ───────────────────────────────────────────────
 
 app.post(
-  "/make-server-f62a5d52/simulate-booking",
+  "/simulate-booking",
   async (c) => {
     const { family_id, caregiver_id } = await c.req.json();
     type Log = {
