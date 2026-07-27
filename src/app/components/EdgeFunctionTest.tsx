@@ -15,6 +15,10 @@ export function EdgeFunctionTest() {
     addLog('Testing /health endpoint...');
     try {
       const res = await fetch(`${EDGE_URL}/health`);
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`HTTP ${res.status}: ${text}`);
+      }
       const data = await res.json();
       addLog(`✅ Health check: ${JSON.stringify(data)}`);
     } catch (err: any) {
@@ -55,6 +59,10 @@ export function EdgeFunctionTest() {
     addLog('Testing /caregivers endpoint...');
     try {
       const res = await fetch(`${EDGE_URL}/caregivers?city=Toronto&verified_only=true`);
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`HTTP ${res.status}: ${text}`);
+      }
       const data = await res.json();
       addLog(`✅ Caregivers: Found ${data.caregivers?.length || 0} caregivers`);
     } catch (err: any) {
