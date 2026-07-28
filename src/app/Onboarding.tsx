@@ -3,6 +3,7 @@ import { supabase } from "./supabase";
 import {
   Heart, X, CheckCircle, AlertCircle, CreditCard, FileText, Briefcase, Loader2,
 } from "lucide-react";
+import { CardLinkModal } from "./components/CardLinkModal";
 import type { AppUser, AuthMode, Role } from "./types";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -175,6 +176,7 @@ export function Onboarding({ initialMode, initialRole, onSuccess, onBack }: {
   const [password, setPassword] = useState("");
   const [loading,  setLoading]  = useState(false);
   const [error,    setError]    = useState("");
+  const [showCardModal, setShowCardModal] = useState(false);
   const [uid,      setUid]      = useState("");
 
   // Family questionnaire state
@@ -192,7 +194,7 @@ export function Onboarding({ initialMode, initialRole, onSuccess, onBack }: {
     displayName: "", pswRole: "psw", languages: [] as string[],
     cities: [] as string[], hourlyRate: "", careTypes: [] as string[],
     govId: "", pswCert: "", vsc: "", firstAid: "",
-    cardLinked: false, ack1: false, ack2: false, ack3: false, ack4: false,
+    cardLinked: false, cardLast4: "", ack1: false, ack2: false, ack3: false, ack4: false,
   });
 
   const fm_ = (k: keyof typeof fm, v: any) => setFm(p => ({ ...p, [k]: v }));
@@ -533,9 +535,18 @@ export function Onboarding({ initialMode, initialRole, onSuccess, onBack }: {
             <div className="space-y-5">
               <p className="text-sm text-slate-500 leading-relaxed">To receive payments and automate platform billing, link a valid Canadian Visa/Mastercard. Card details are tokenized securely — raw card numbers are never stored.</p>
               {!cg.cardLinked
-                ? <button type="button" onClick={() => cg_("cardLinked", true)} className="w-full py-3 bg-[#0EA5A0] text-white rounded-xl font-bold text-sm hover:bg-[#0d9489] transition-colors flex items-center justify-center gap-2"><CreditCard size={15} />Link Your Card Now via Secure Gateway</button>
-                : <div className="w-full py-3.5 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-700 font-semibold text-sm flex items-center justify-center gap-2"><CheckCircle size={15} />Card Linked Successfully · •••• •••• •••• 4242</div>
+                ? <button type="button" onClick={() => setShowCardModal(true)} className="w-full py-3 bg-[#0EA5A0] text-white rounded-xl font-bold text-sm hover:bg-[#0d9489] transition-colors flex items-center justify-center gap-2"><CreditCard size={15} />Link Your Card Now via Secure Gateway</button>
+                : <div className="w-full py-3.5 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-700 font-semibold text-sm flex items-center justify-center gap-2"><CheckCircle size={15} />Card Linked Successfully · •••• •••• •••• {cg.cardLast4}</div>
               }
+              {showCardModal && (
+                <CardLinkModal
+                  userId={uid}
+                  email={email}
+                  name={`${cg.firstName} ${cg.lastName}`.trim()}
+                  onLinked={(last4) => { cg_("cardLinked", true); cg_("cardLast4", last4); setShowCardModal(false); }}
+                  onClose={() => setShowCardModal(false)}
+                />
+              )}
               <div className="space-y-3">
                 <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Mandatory Billing Acknowledgments</p>
                 <AckBox checked={cg.ack1} onChange={v => cg_("ack1", v)}>"I understand that GetMeCare acts as a matchmaking marketplace. I am registering as an <strong>independent contractor and a self-employed business entity</strong> — not an employee of GetMeCare."</AckBox>
