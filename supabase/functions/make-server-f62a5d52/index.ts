@@ -107,100 +107,30 @@ app.get("/health", (c) =>
 // ── DB Setup ──────────────────────────────────────────────────────────────────
 
 app.post("/setup-db", async (c) => {
-  const stmts = [
-    `ALTER TABLE profiles ADD COLUMN IF NOT EXISTS phone TEXT`,
-    `ALTER TABLE profiles ADD COLUMN IF NOT EXISTS display_name TEXT`,
-    `ALTER TABLE profiles ADD COLUMN IF NOT EXISTS psw_role TEXT`,
-    `ALTER TABLE profiles ADD COLUMN IF NOT EXISTS postal_code TEXT`,
-    `ALTER TABLE profiles ADD COLUMN IF NOT EXISTS hourly_rate NUMERIC`,
-    `ALTER TABLE profiles ADD COLUMN IF NOT EXISTS languages TEXT[]`,
-    `ALTER TABLE profiles ADD COLUMN IF NOT EXISTS cities TEXT[]`,
-    `ALTER TABLE profiles ADD COLUMN IF NOT EXISTS care_types TEXT[]`,
-    `ALTER TABLE profiles ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT`,
-    `ALTER TABLE profiles ADD COLUMN IF NOT EXISTS stripe_payment_method_id TEXT`,
-    `ALTER TABLE profiles ADD COLUMN IF NOT EXISTS rating NUMERIC DEFAULT 5.0`,
-    `ALTER TABLE profiles ADD COLUMN IF NOT EXISTS review_count INTEGER DEFAULT 0`,
-    `ALTER TABLE profiles DISABLE ROW LEVEL SECURITY`,
-    `CREATE TABLE IF NOT EXISTS jobs (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      family_id UUID,
-      title TEXT NOT NULL,
-      city TEXT,
-      postal_prefix TEXT,
-      care_type TEXT DEFAULT 'PSW',
-      hours TEXT,
-      schedule TEXT,
-      rate NUMERIC,
-      status TEXT DEFAULT 'open',
-      created_at TIMESTAMPTZ DEFAULT NOW()
-    )`,
-    `ALTER TABLE jobs DISABLE ROW LEVEL SECURITY`,
-    `CREATE TABLE IF NOT EXISTS bids (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      job_id UUID REFERENCES jobs(id) ON DELETE CASCADE,
-      caregiver_id UUID,
-      amount NUMERIC NOT NULL,
-      note TEXT,
-      status TEXT DEFAULT 'pending',
-      counter_amount NUMERIC,
-      created_at TIMESTAMPTZ DEFAULT NOW()
-    )`,
-    `ALTER TABLE bids DISABLE ROW LEVEL SECURITY`,
-    `CREATE TABLE IF NOT EXISTS shifts (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      job_id UUID REFERENCES jobs(id),
-      caregiver_id UUID,
-      family_id UUID,
-      clock_in TIMESTAMPTZ,
-      clock_out TIMESTAMPTZ,
-      hours_worked NUMERIC,
-      rate NUMERIC,
-      gross NUMERIC,
-      platform_fee NUMERIC,
-      net NUMERIC,
-      status TEXT DEFAULT 'active',
-      stripe_charge_id TEXT,
-      stripe_status TEXT,
-      created_at TIMESTAMPTZ DEFAULT NOW()
-    )`,
-    `ALTER TABLE shifts DISABLE ROW LEVEL SECURITY`,
-    `CREATE TABLE IF NOT EXISTS notifications (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      user_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
-      type TEXT NOT NULL,
-      title TEXT NOT NULL,
-      message TEXT,
-      data JSONB DEFAULT '{}',
-      read BOOLEAN DEFAULT false,
-      created_at TIMESTAMPTZ DEFAULT NOW()
-    )`,
-    `ALTER TABLE notifications ENABLE ROW LEVEL SECURITY`,
-    `CREATE POLICY IF NOT EXISTS "users read own notifications" ON notifications FOR SELECT USING (auth.uid() = user_id)`,
-    `CREATE POLICY IF NOT EXISTS "users update own notifications" ON notifications FOR UPDATE USING (auth.uid() = user_id)`,
-    `CREATE INDEX IF NOT EXISTS idx_profiles_role ON profiles(role)`,
-    `CREATE INDEX IF NOT EXISTS idx_profiles_verified ON profiles(verified)`,
-    `CREATE INDEX IF NOT EXISTS idx_profiles_postal ON profiles(postal_code)`,
-    `CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status)`,
-    `CREATE INDEX IF NOT EXISTS idx_jobs_city ON jobs(city)`,
-    `CREATE INDEX IF NOT EXISTS idx_bids_job_id ON bids(job_id)`,
-    `CREATE INDEX IF NOT EXISTS idx_shifts_caregiver_id ON shifts(caregiver_id)`,
-    `CREATE INDEX IF NOT EXISTS idx_shifts_family_id ON shifts(family_id)`,
-    `CREATE INDEX IF NOT EXISTS idx_notifs_user_id ON notifications(user_id)`,
-  ];
-  const errors: string[] = [];
-  for (const sql of stmts) {
-    const { error } = await supabase
-      .rpc("exec_sql", { sql })
-      .catch(() => ({ error: { message: sql } }));
-    if (
-      error &&
-      !error.message?.includes("already exists") &&
-      !error.message?.includes("duplicate")
-    ) {
-      errors.push(error.message ?? sql);
-    }
+  try {
+    // Add document URL columns if they don't exist
+    await supabase.rpc("exec_sql", { sql: `
+      ALTER TABLE profiles
+        ADD COLUMN IF NOT EXISTS gov_id_url    TEXT,
+        ADD COLUMN IF NOT EXISTS vsc_url       TEXT,
+        ADD COLUMN IF NOT EXISTS psw_cert_url  TEXT,
+        ADD COLUMN IF NOT EXISTS first_aid_url TEXT;
+    ` }).catch(() => null); // ignore if rpc not available
+
+    const checks = await Promise.all([
+      supabase.from("profiles").select("id").limit(1),
+      supabase.from("jobs").select("id").limit(1),
+      supabase.from("bids").select("id").limit(1),
+      supabase.from("shifts").select("id").limit(1),
+      supabase.from("notifications").select("id").limit(1),
+    ]);
+    const errors = checks
+      .map((r) => r.error?.message)
+      .filter((e) => e && !e.includes("Results contain 0 rows"));
+    return c.json({ success: errors.length === 0, errors });
+  } catch (err: any) {
+    return c.json({ success: false, errors: [err.message ?? "Unknown error"] });
   }
-  return c.json({ success: errors.length === 0, errors });
 });
 
 // ── M2: Matching Engine ───────────────────────────────────────────────────────
@@ -669,6 +599,55 @@ app.post("/link-card", async (c) => {
   }
 });
 
+// ── Stripe: Create $39 vetting checkout session (family) ─────────────────────
+
+app.post("/create-checkout", async (c) => {
+  const { user_id, email } = await c.req.json();
+  try {
+    const session = await getStripe().checkout.sessions.create({
+      mode: "payment",
+      payment_method_types: ["card"],
+      customer_email: email,
+      line_items: [{
+        price_data: {
+          currency: "cad",
+          unit_amount: 3900,
+          product_data: {
+            name: "GetMeCare Account Activation Fee",
+            description: "One-time non-refundable fee · Ontario VSC + PSW credential verification",
+          },
+        },
+        quantity: 1,
+      }],
+      metadata: { user_id },
+      success_url: `${SITE}/payment-success?session_id={CHECKOUT_SESSION_ID}&user_id=${user_id}`,
+      cancel_url: `${SITE}/register/employer`,
+    });
+    return c.json({ url: session.url });
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
+// ── Stripe: Verify payment & activate family account ─────────────────────────
+
+app.post("/verify-payment", async (c) => {
+  const { session_id, user_id } = await c.req.json();
+  try {
+    const session = await getStripe().checkout.sessions.retrieve(session_id);
+    if (session.payment_status !== "paid") {
+      return c.json({ success: false, error: "Payment not completed" }, 400);
+    }
+    if (session.metadata?.user_id !== user_id) {
+      return c.json({ success: false, error: "User mismatch" }, 403);
+    }
+    await supabase.from("profiles").update({ vetting_paid: true }).eq("id", user_id);
+    return c.json({ success: true });
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
 // ── Admin: verify / suspend / reinstate caregiver ────────────────────────────
 
 app.post(
@@ -1049,5 +1028,8 @@ app.post(
     });
   },
 );
+
+// Debug: catch-all to reveal what path Hono sees
+app.all("*", (c) => c.json({ debug: true, path: c.req.path, url: c.req.url }));
 
 Deno.serve(app.fetch);
