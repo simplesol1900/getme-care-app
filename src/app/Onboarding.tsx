@@ -328,7 +328,7 @@ export function Onboarding({ initialMode, initialRole, onSuccess, onBack }: {
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-slate-900 mb-1.5">Mobile Phone Number</label>
-                  <input type="tel" required placeholder="+1 (416) 000-0000" value={role === "family" ? fm.phone : cg.phone} onChange={e => role === "family" ? fm_("phone", e.target.value) : cg_("phone", e.target.value)} className={INP} />
+                  <input type="tel" required placeholder="+1 (416) 000-0000" value={role === "family" ? fm.phone : cg.phone} inputMode="numeric" onChange={e => { const v = e.target.value.replace(/[^\d+\-() ]/g, ""); role === "family" ? fm_("phone", v) : cg_("phone", v); }} className={INP} />
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-slate-900 mb-1.5">Password</label>
