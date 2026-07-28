@@ -599,6 +599,26 @@ app.post("/link-card", async (c) => {
   }
 });
 
+// ── Stripe: Create Setup Intent for caregiver card linking ───────────────────
+
+app.post("/create-setup-intent", async (c) => {
+  const { caregiver_id, email, name } = await c.req.json();
+  try {
+    const customer = await getStripe().customers.create({
+      email, name, metadata: { caregiver_id },
+    });
+    const intent = await getStripe().setupIntents.create({
+      customer: customer.id,
+      payment_method_types: ["card"],
+      metadata: { caregiver_id },
+    });
+    await supabase.from("profiles").update({ stripe_customer_id: customer.id }).eq("id", caregiver_id);
+    return c.json({ client_secret: intent.client_secret, customer_id: customer.id });
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500);
+  }
+});
+
 // ── Stripe: Create $39 vetting checkout session (family) ─────────────────────
 
 app.post("/create-checkout", async (c) => {
