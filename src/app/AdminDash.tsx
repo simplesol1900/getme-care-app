@@ -832,11 +832,23 @@ function CaregiverCard({ c, onVerify, onSuspend, onReinstate }: { c: any; onVeri
           <p className="text-xs text-slate-400">{c.city ?? "—"} · {c.psw_role === "psw" ? "PSW" : "Companion"} · ${c.hourly_rate ?? "—"}/hr</p>
           <p className="text-xs text-slate-400">{c.email}</p>
           <div className="flex flex-wrap gap-1.5 mt-2">
-            {["Gov ID","VSC","PSW Cert","First Aid"].map(d => (
-              <span key={d} className="inline-flex items-center gap-1 text-xs bg-[#E8EEF8] text-[#1B3A6B] px-2 py-0.5 rounded-full">
-                <FileText size={9} />{d}
-              </span>
-            ))}
+            {([
+              { label: "Gov ID",    key: "gov_id_url"   },
+              { label: "VSC",       key: "vsc_url"      },
+              { label: "PSW Cert",  key: "psw_cert_url" },
+              { label: "First Aid", key: "first_aid_url"},
+            ] as { label: string; key: keyof typeof c }[]).map(({ label, key }) =>
+              c[key] ? (
+                <a key={label} href={c[key] as string} target="_blank" rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full hover:bg-emerald-100 transition-colors">
+                  <FileText size={9} />{label} ↗
+                </a>
+              ) : (
+                <span key={label} className="inline-flex items-center gap-1 text-xs bg-slate-100 text-slate-400 px-2 py-0.5 rounded-full">
+                  <FileText size={9} />{label}
+                </span>
+              )
+            )}
           </div>
         </div>
       </div>

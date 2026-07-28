@@ -1,12 +1,13 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Home, Timer, Search, Briefcase, Banknote, UserCheck,
   CheckCircle, AlertCircle, CreditCard, TrendingUp, Lock,
   Play, Square, FileText, DollarSign, Clock, Calendar,
-  MapPin, Loader2, Bell, Mail, MessageSquare,
+  MapPin, Loader2, Bell, Mail, MessageSquare, Upload,
 } from "lucide-react";
 import type { AppUser } from "./types";
 import { Shell, StatCard, Badge } from "./shared";
+import { supabase } from "./supabase";
 import {
   matchJobsToCaregiver, submitBid, fetchBidsForCaregiver,
   clockIn, clockOut, fetchCaregiverShifts,
@@ -29,8 +30,62 @@ function ProfileRow({ label, value }: { label: string; value?: string | string[]
   );
 }
 
+function DocUploadRow({ label, userId, docKey, currentUrl, onUploaded }: {
+  label: string; userId: string; docKey: string;
+  currentUrl?: string; onUploaded: (url: string) => void;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true); setError("");
+    const ext = file.name.split(".").pop();
+    const path = `${userId}/${docKey}.${ext}`;
+    const { error: upErr } = await supabase.storage
+      .from("caregiver-docs").upload(path, file, { upsert: true });
+    if (upErr) { setError("Upload failed. Try again."); setUploading(false); return; }
+    const { data } = supabase.storage.from("caregiver-docs").getPublicUrl(path);
+    await supabase.from("profiles").update({ [`${docKey.replace(/-/g, "_")}_url`]: data.publicUrl }).eq("id", userId);
+    onUploaded(data.publicUrl);
+    setUploading(false);
+  };
+
+  return (
+    <div className="flex items-center justify-between py-3 border-b border-[rgba(15,23,42,0.07)] last:border-0">
+      <div className="flex items-center gap-3">
+        <div className={`w-2 h-2 rounded-full ${currentUrl ? "bg-emerald-500" : "bg-slate-200"}`} />
+        <p className="text-sm text-slate-900">{label}</p>
+        {error && <span className="text-xs text-red-500">{error}</span>}
+      </div>
+      <div className="flex items-center gap-2">
+        {currentUrl && (
+          <a href={currentUrl} target="_blank" rel="noopener noreferrer"
+            className="text-xs text-[#0EA5A0] hover:underline">View ↗</a>
+        )}
+        <button onClick={() => ref.current?.click()} disabled={uploading}
+          className="flex items-center gap-1 text-xs bg-[#E8EEF8] text-[#1B3A6B] px-3 py-1.5 rounded-lg hover:bg-[#1B3A6B] hover:text-white transition-colors disabled:opacity-50">
+          {uploading ? <Loader2 size={11} className="animate-spin" /> : <Upload size={11} />}
+          {currentUrl ? "Replace" : "Upload"}
+        </button>
+        <input ref={ref} type="file" accept=".pdf,.jpg,.jpeg,.png" className="hidden" onChange={handleFile} />
+      </div>
+    </div>
+  );
+}
+
 export function CaregiverDash({ user, onSignOut, onNavigate, initialTab }: { user: AppUser; onSignOut: () => void; onNavigate?: (v: string) => void; initialTab?: string }) {
   const [tab, setTab] = useState(initialTab ?? "overview");
+
+  // Document URLs (loaded from profile or set after upload)
+  const [docUrls, setDocUrls] = useState({
+    gov_id: (user as any).gov_id_url as string | undefined,
+    vsc: (user as any).vsc_url as string | undefined,
+    psw_cert: (user as any).psw_cert_url as string | undefined,
+    first_aid: (user as any).first_aid_url as string | undefined,
+  });
 
   // Clock-in/out state
   const [clockedIn, setClockedIn] = useState(false);
@@ -103,6 +158,11 @@ export function CaregiverDash({ user, onSignOut, onNavigate, initialTab }: { use
   // Load notifications
   useEffect(() => {
     fetchNotifications(user.id).then(({ data, unread: u }) => { setNotifications(data); setUnread(u); });
+  }, [user.id]);
+
+  useEffect(() => {
+    supabase.from("profiles").select("gov_id_url,vsc_url,psw_cert_url,first_aid_url").eq("id", user.id).single()
+      .then(({ data }) => { if (data) setDocUrls({ gov_id: data.gov_id_url, vsc: data.vsc_url, psw_cert: data.psw_cert_url, first_aid: data.first_aid_url }); });
   }, [user.id]);
 
   const handleClockIn = async () => {
@@ -540,20 +600,10 @@ export function CaregiverDash({ user, onSignOut, onNavigate, initialTab }: { use
               <h2 className="font-semibold text-slate-900">Credentials &amp; Documents</h2>
               {!user.verified && <span className="text-xs text-amber-600 font-medium">Under admin review</span>}
             </div>
-            {[
-              { label: "Government-Issued Photo ID",             uploaded: user.govId   ?? false, hidden: false },
-              { label: "PSW Certificate / Nursing Registration",  uploaded: user.pswCert ?? false, hidden: user.pswRole !== "psw" },
-              { label: "Vulnerable Sector Check (VSC)",           uploaded: user.vsc     ?? false, hidden: false },
-              { label: "First Aid / CPR Certification",           uploaded: user.firstAid ?? false, hidden: false },
-            ].filter(d => !d.hidden).map(doc => (
-              <div key={doc.label} className="flex items-center justify-between py-3 border-b border-[rgba(15,23,42,0.07)] last:border-0">
-                <div className="flex items-center gap-3">
-                  <div className={`w-2 h-2 rounded-full ${doc.uploaded ? "bg-emerald-500" : "bg-slate-200"}`} />
-                  <p className="text-sm text-slate-900">{doc.label}</p>
-                </div>
-                <Badge color={doc.uploaded ? "green" : "gray"}>{doc.uploaded ? "Uploaded" : "Missing"}</Badge>
-              </div>
-            ))}
+            <DocUploadRow label="Government-Issued Photo ID" userId={user.id} docKey="gov-id" currentUrl={docUrls.gov_id} onUploaded={url => setDocUrls(p => ({ ...p, gov_id: url }))} />
+            {user.pswRole === "psw" && <DocUploadRow label="PSW Certificate / Nursing Registration" userId={user.id} docKey="psw-cert" currentUrl={docUrls.psw_cert} onUploaded={url => setDocUrls(p => ({ ...p, psw_cert: url }))} />}
+            <DocUploadRow label="Vulnerable Sector Check (VSC)" userId={user.id} docKey="vsc" currentUrl={docUrls.vsc} onUploaded={url => setDocUrls(p => ({ ...p, vsc: url }))} />
+            <DocUploadRow label="First Aid / CPR Certification" userId={user.id} docKey="first-aid" currentUrl={docUrls.first_aid} onUploaded={url => setDocUrls(p => ({ ...p, first_aid: url }))} />
             {!user.verified && (
               <div className="mt-4 bg-amber-50 rounded-xl p-4 border border-amber-100">
                 <p className="text-xs text-amber-800 leading-relaxed">Admin review within 48 business hours. Your profile goes live once verified.</p>

@@ -13,6 +13,7 @@ import { TrustPage } from "./pages/TrustPage";
 import { LegalPage } from "./pages/LegalPage";
 import { HowItWorksPage } from "./pages/HowItWorksPage";
 import { ChatPage } from "./pages/ChatPage";
+import PaymentSuccessPage from "./pages/PaymentSuccessPage";
 
 // ── Root layout — provides AuthContext to all routes ──────────────────────────
 function Root() {
@@ -250,6 +251,7 @@ export const router = createBrowserRouter([
       // Unified
       { path: "dashboard/chat",             Component: ChatRoute },
       { path: "admin-portal",               Component: AdminDashRoute },
+      { path: "payment-success",            Component: PaymentSuccessPage },
       // Fallback
       { path: "*",                          Component: NotFound },
     ],
