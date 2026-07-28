@@ -5,7 +5,7 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 import Stripe from "npm:stripe@14";
 import { Resend } from "npm:resend@2";
 
-const app = new Hono();
+const app = new Hono().basePath("/make-server-f62a5d52");
 
 app.use("*", logger(console.log));
 app.use(
